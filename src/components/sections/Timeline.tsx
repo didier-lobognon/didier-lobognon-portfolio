@@ -11,8 +11,6 @@ import {
   Award,
   Briefcase,
   GraduationCap,
-  Rocket,
-  Sparkles,
   ArrowDown,
   ExternalLink,
   MapPin,
@@ -59,16 +57,16 @@ const TYPE_META: Record<
     accent: '#F59E0B',
   },
   stage: {
-    icon: Rocket,
-    labelFr: 'Stage',
-    labelEn: 'Internship',
-    accent: '#94A3B8',
+    icon: Briefcase,
+    labelFr: 'Expérience',
+    labelEn: 'Experience',
+    accent: '#3B82F6',
   },
   freelance: {
-    icon: Sparkles,
-    labelFr: 'Freelance',
-    labelEn: 'Freelance',
-    accent: '#F472B6',
+    icon: Briefcase,
+    labelFr: 'Expérience',
+    labelEn: 'Experience',
+    accent: '#3B82F6',
   },
 }
 
