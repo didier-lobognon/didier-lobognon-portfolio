@@ -6,6 +6,7 @@ import { ProjectCaseStudy } from '@/components/projects/ProjectCaseStudy'
 import { viewportOnce } from '@/lib/animations'
 import type { Project } from '@/types'
 import { cn } from '@/lib/utils'
+import { localizeProject } from '@/lib/localize'
 import { useLanguage } from '@/i18n/LanguageProvider'
 import { useTheme } from '@/i18n/ThemeProvider'
 
@@ -13,20 +14,20 @@ type FilterKey = 'all' | 'featured'
 /** heroL/R = grande ; side = petite à côté d’une grande ; base = normale */
 type CardSize = 'heroL' | 'heroR' | 'side' | 'base'
 
-const THEME: Record<string, { accent: string; soft: string; label: string }> = {
-  masafinance: { accent: '#12B76A', soft: 'rgba(18,183,106,0.22)', label: 'FinTech' },
-  'couvoir-baf': { accent: '#EA580C', soft: 'rgba(234,88,12,0.22)', label: 'ERP' },
-  dynexcafrica: { accent: '#3B82F6', soft: 'rgba(59,130,246,0.22)', label: 'ONG' },
-  'dynexc-gp': { accent: '#F8FAFC', soft: 'rgba(248,250,252,0.18)', label: 'RH' },
-  kanie: { accent: '#7C3AED', soft: 'rgba(124,58,237,0.22)', label: 'E-commerce' },
-  'cnr-ci': { accent: '#14B8A6', soft: 'rgba(20,184,166,0.22)', label: 'Robotique' },
-  'ccnr-classement': { accent: '#F97316', soft: 'rgba(249,115,22,0.22)', label: 'Live CNR' },
-  mecagirls: { accent: '#FF6A00', soft: 'rgba(255,106,0,0.22)', label: 'STEM' },
-  classstem: { accent: '#F59E0B', soft: 'rgba(245,158,11,0.22)', label: 'LMS' },
-  engeem: { accent: '#22D3EE', soft: 'rgba(34,211,238,0.22)', label: 'Data' },
-  'engeem-docs': { accent: '#A78BFA', soft: 'rgba(167,139,250,0.22)', label: 'Docs' },
-  pimedia: { accent: '#DC2626', soft: 'rgba(220,38,38,0.22)', label: 'Média' },
-  wam: { accent: '#0EA5E9', soft: 'rgba(14,165,233,0.22)', label: 'Mobilité' },
+const THEME: Record<string, { accent: string; soft: string; labelFr: string; labelEn: string }> = {
+  masafinance: { accent: '#12B76A', soft: 'rgba(18,183,106,0.22)', labelFr: 'FinTech', labelEn: 'FinTech' },
+  'couvoir-baf': { accent: '#EA580C', soft: 'rgba(234,88,12,0.22)', labelFr: 'ERP', labelEn: 'ERP' },
+  dynexcafrica: { accent: '#3B82F6', soft: 'rgba(59,130,246,0.22)', labelFr: 'ONG', labelEn: 'NGO' },
+  'dynexc-gp': { accent: '#F8FAFC', soft: 'rgba(248,250,252,0.18)', labelFr: 'RH', labelEn: 'HR' },
+  kanie: { accent: '#7C3AED', soft: 'rgba(124,58,237,0.22)', labelFr: 'E-commerce', labelEn: 'E-commerce' },
+  'cnr-ci': { accent: '#14B8A6', soft: 'rgba(20,184,166,0.22)', labelFr: 'Robotique', labelEn: 'Robotics' },
+  'ccnr-classement': { accent: '#F97316', soft: 'rgba(249,115,22,0.22)', labelFr: 'Live CNR', labelEn: 'Live CNR' },
+  mecagirls: { accent: '#FF6A00', soft: 'rgba(255,106,0,0.22)', labelFr: 'STEM', labelEn: 'STEM' },
+  classstem: { accent: '#F59E0B', soft: 'rgba(245,158,11,0.22)', labelFr: 'LMS', labelEn: 'LMS' },
+  engeem: { accent: '#22D3EE', soft: 'rgba(34,211,238,0.22)', labelFr: 'Data', labelEn: 'Data' },
+  'engeem-docs': { accent: '#A78BFA', soft: 'rgba(167,139,250,0.22)', labelFr: 'Docs', labelEn: 'Docs' },
+  pimedia: { accent: '#DC2626', soft: 'rgba(220,38,38,0.22)', labelFr: 'Média', labelEn: 'Media' },
+  wam: { accent: '#0EA5E9', soft: 'rgba(14,165,233,0.22)', labelFr: 'Mobilité', labelEn: 'Mobility' },
 }
 
 /**
@@ -57,16 +58,27 @@ function spanClass(size: CardSize) {
   return 'sm:col-span-1 lg:col-span-4'
 }
 
-function themeOf(id: string, project?: Project) {
-  if (THEME[id]) return THEME[id]
+function themeOf(id: string, locale: string, project?: Project) {
+  const entry = THEME[id]
+  if (entry) {
+    return {
+      accent: entry.accent,
+      soft: entry.soft,
+      label: locale === 'en' ? entry.labelEn : entry.labelFr,
+    }
+  }
   if (project?.accent) {
     return {
       accent: project.accent,
       soft: `${project.accent}38`,
-      label: project.category?.split(/[·•]/)[0]?.trim() ?? 'Projet',
+      label: project.category?.split(/[·•|/]/)[0]?.trim() ?? (locale === 'en' ? 'Project' : 'Projet'),
     }
   }
-  return { accent: '#3B82F6', soft: 'rgba(59,130,246,0.22)', label: 'Projet' }
+  return {
+    accent: '#3B82F6',
+    soft: 'rgba(59,130,246,0.22)',
+    label: locale === 'en' ? 'Project' : 'Projet',
+  }
 }
 
 function OrbitBorder({ accent, active }: { accent: string; active: boolean }) {
@@ -125,10 +137,11 @@ function ProjectCard({
   size: CardSize
   onOpen: (project: Project) => void
 }) {
-  const theme = themeOf(project.id, project)
   const { locale, t } = useLanguage()
   const { isDark } = useTheme()
   const fr = locale === 'fr'
+  const p = localizeProject(project, locale)
+  const theme = themeOf(p.id, locale, p)
   const [hovered, setHovered] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const ctaCase = fr ? 'Voir détail' : 'View details'
@@ -137,7 +150,7 @@ function ProjectCard({
   const isHero = size === 'heroL' || size === 'heroR'
   const isSide = size === 'side'
   const mirror = size === 'heroR'
-  const needsMore = project.description.length > (isHero ? 140 : 100)
+  const needsMore = p.description.length > (isHero ? 140 : 100)
 
   return (
     <motion.div
@@ -190,8 +203,8 @@ function ProjectCard({
           )}
         >
           <img
-            src={project.image}
-            alt={`Aperçu du projet ${project.title}`}
+            src={p.image}
+            alt={fr ? `Aperçu du projet ${p.title}` : `${p.title} project preview`}
             className={cn(
               'h-full w-full object-cover object-top transition-transform duration-700',
               isHero ? 'scale-[1.06]' : 'hover:scale-[1.05]',
@@ -247,14 +260,14 @@ function ProjectCard({
         >
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="font-mono text-[10px] tracking-[0.16em] text-slate-500 uppercase">
-              {project.period ?? project.year}
+              {p.period ?? p.year}
             </span>
-            {project.role && (
+            {p.role && (
               <>
                 <span className="text-slate-600" aria-hidden>
                   ·
                 </span>
-                <span className="text-[11px] text-slate-400">{project.role}</span>
+                <span className="text-[11px] text-slate-400">{p.role}</span>
               </>
             )}
           </div>
@@ -266,7 +279,7 @@ function ProjectCard({
                 isHero ? 'text-2xl sm:text-3xl' : 'text-xl',
               )}
             >
-              {project.title}
+              {p.title}
             </h3>
             <p
               className={cn(
@@ -275,7 +288,7 @@ function ProjectCard({
                 !expanded && (isHero ? 'line-clamp-3' : 'line-clamp-2'),
               )}
             >
-              {project.description}
+              {p.description}
             </p>
             {needsMore && (
               <button
@@ -290,18 +303,18 @@ function ProjectCard({
             )}
           </div>
 
-          {project.contributionTeaser && (
+          {p.contributionTeaser && (
             <p className="text-[11px] leading-snug text-slate-400">
               <span className="font-medium" style={{ color: isDark ? theme.accent : '#0b1220' }}>
-                Contribution
+                {fr ? 'Contribution' : 'Contribution'}
               </span>
               <span className="text-slate-600"> — </span>
-              {project.contributionTeaser}
+              {p.contributionTeaser}
             </p>
           )}
 
           <div className="flex flex-wrap gap-1.5">
-            {project.technologies.slice(0, isHero ? 6 : 4).map((tech) => (
+            {p.technologies.slice(0, isHero ? 6 : 4).map((tech) => (
               <span
                 key={tech}
                 className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-slate-300"
@@ -309,22 +322,22 @@ function ProjectCard({
                 {tech}
               </span>
             ))}
-            {project.technologies.length > (isHero ? 6 : 4) && (
+            {p.technologies.length > (isHero ? 6 : 4) && (
               <span className="rounded-md px-2 py-0.5 text-[10px] text-slate-500">
-                +{project.technologies.length - (isHero ? 6 : 4)}
+                +{p.technologies.length - (isHero ? 6 : 4)}
               </span>
             )}
           </div>
 
           <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
-            {project.caseStudy && (
+            {p.caseStudy && (
               <button
                 type="button"
                 onClick={() => onOpen(project)}
                 data-cursor={ctaCase}
                 className={cn(
                   'inline-flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold transition-transform hover:scale-[1.02]',
-                  isHero || project.demo ? 'px-4' : 'flex-1',
+                  isHero || p.demo ? 'px-4' : 'flex-1',
                   isDark ? 'text-[#050816]' : 'text-white',
                 )}
                 style={{
@@ -338,21 +351,21 @@ function ProjectCard({
                 <ArrowUpRight className="h-3.5 w-3.5" />
               </button>
             )}
-            {project.demo && (
+            {p.demo && (
               <a
-                href={project.demo}
+                href={p.demo}
                 target="_blank"
                 rel="noreferrer"
                 data-cursor={ctaSite}
                 className={cn(
                   'inline-flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold transition-colors',
-                  project.caseStudy
+                  p.caseStudy
                     ? 'border border-white/15 bg-white/[0.05] px-4 text-text hover:bg-white/[0.1]'
                     : 'flex-1 hover:scale-[1.02]',
-                  !project.caseStudy && (isDark ? 'text-[#050816]' : 'text-white'),
+                  !p.caseStudy && (isDark ? 'text-[#050816]' : 'text-white'),
                 )}
                 style={
-                  !project.caseStudy
+                  !p.caseStudy
                     ? {
                         background: isDark ? theme.accent : '#0b1220',
                         boxShadow: isDark
@@ -366,7 +379,7 @@ function ProjectCard({
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             )}
-            {!project.demo && !project.caseStudy && (
+            {!p.demo && !p.caseStudy && (
               <span className="inline-flex items-center gap-1.5 text-xs text-muted">
                 <ExternalLink className="h-3.5 w-3.5" />
                 {fr ? 'Détails' : 'Details'}

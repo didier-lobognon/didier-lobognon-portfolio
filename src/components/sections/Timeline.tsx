@@ -22,6 +22,7 @@ import { timeline } from '@/data/timeline'
 import { personalInfo } from '@/data/personal'
 import { SectionHeading } from '@/components/shared/SectionHeading'
 import { viewportOnce } from '@/lib/animations'
+import { pickLocale } from '@/lib/localize'
 import { cn } from '@/lib/utils'
 import type { TimelineItem, TimelineType } from '@/types'
 import { useLanguage } from '@/i18n/LanguageProvider'
@@ -86,15 +87,24 @@ function JourneyNode({
   item,
   index,
   progress,
-  fr,
+  locale,
   currentLabel,
 }: {
   item: TimelineItem
   index: number
   progress: MotionValue<number>
-  fr: boolean
+  locale: string
   currentLabel: string
 }) {
+  const fr = locale === 'fr'
+  const title = pickLocale(item.titleFr, item.titleEn, locale)
+  const period = pickLocale(item.periodFr, item.periodEn, locale)
+  const location = pickLocale(item.locationFr, item.locationEn, locale)
+  const description = pickLocale(item.descriptionFr, item.descriptionEn, locale)
+  const tags =
+    item.tagsFr && item.tagsEn
+      ? pickLocale(item.tagsFr, item.tagsEn, locale)
+      : item.tagsFr ?? item.tagsEn
   const meta = TYPE_META[item.type]
   const Icon = meta.icon
   const brand = item.brandColor
@@ -260,7 +270,7 @@ function JourneyNode({
                   light ? 'text-slate-500' : 'text-slate-500',
                 )}
               >
-                {item.period}
+                {period}
               </span>
               {item.current && (
                 <span
@@ -288,7 +298,7 @@ function JourneyNode({
               side === 'left' && 'lg:text-right',
             )}
           >
-            {item.title}
+            {title}
           </h3>
           <p
             className={cn(
@@ -307,7 +317,7 @@ function JourneyNode({
             )}
           >
             <MapPin className="h-3 w-3 shrink-0" />
-            {item.location}
+            {location}
           </p>
           <p
             className={cn(
@@ -316,17 +326,17 @@ function JourneyNode({
               side === 'left' && 'lg:text-right',
             )}
           >
-            {item.description}
+            {description}
           </p>
 
-          {item.tags && item.tags.length > 0 && (
+          {tags && tags.length > 0 && (
             <div
               className={cn(
                 'relative mt-4 flex flex-wrap gap-1.5',
                 side === 'left' && 'lg:justify-end',
               )}
             >
-              {item.tags.map((tag) => (
+              {tags.map((tag) => (
                 <span
                   key={tag}
                   className={cn(
@@ -384,7 +394,6 @@ function JourneyNode({
 
 export function Timeline() {
   const { t, locale } = useLanguage()
-  const fr = locale === 'fr'
   const [filter, setFilter] = useState<FilterKey>('all')
   const sectionRef = useRef<HTMLElement>(null)
 
@@ -601,7 +610,7 @@ export function Timeline() {
                         item={item}
                         index={i}
                         progress={pathProgress}
-                        fr={fr}
+                        locale={locale}
                         currentLabel={t.journey.current}
                       />
                     </div>

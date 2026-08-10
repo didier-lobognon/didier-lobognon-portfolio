@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import type { Project } from '@/types'
 import { getLenisInstance } from '@/lib/lenis'
+import { localizeProject } from '@/lib/localize'
 import { useLanguage } from '@/i18n/LanguageProvider'
 import { cn } from '@/lib/utils'
 
@@ -28,9 +29,13 @@ interface ProjectCaseStudyProps {
   onClose: () => void
 }
 
-export function ProjectCaseStudy({ project, open, onClose }: ProjectCaseStudyProps) {
+export function ProjectCaseStudy({ project: projectRaw, open, onClose }: ProjectCaseStudyProps) {
   const { locale } = useLanguage()
   const fr = locale === 'fr'
+  const project = useMemo(
+    () => (projectRaw ? localizeProject(projectRaw, locale) : null),
+    [projectRaw, locale],
+  )
   const accent = project?.accent ?? '#12B76A'
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 

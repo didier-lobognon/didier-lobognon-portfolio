@@ -77,12 +77,17 @@ export type TimelineType =
 export interface TimelineItem {
   id: string
   type: TimelineType
-  title: string
+  titleFr: string
+  titleEn: string
   organization: string
-  location: string
-  period: string
-  description: string
-  tags?: string[]
+  locationFr: string
+  locationEn: string
+  periodFr: string
+  periodEn: string
+  descriptionFr: string
+  descriptionEn: string
+  tagsFr?: string[]
+  tagsEn?: string[]
   /** Logo entreprise / établissement */
   logo?: string
   /** Fond personnalisé derrière le logo (ex. couleur marque) */
