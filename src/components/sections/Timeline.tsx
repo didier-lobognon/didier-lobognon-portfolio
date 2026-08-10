@@ -1,74 +1,50 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   motion,
+  useReducedMotion,
   useScroll,
   useSpring,
   useTransform,
   AnimatePresence,
-  type MotionValue,
 } from 'framer-motion'
 import {
   Award,
   Briefcase,
-  GraduationCap,
-  ArrowDown,
+  Code2,
+  Cpu,
   ExternalLink,
+  GraduationCap,
   MapPin,
+  Sparkles,
   Trophy,
+  X,
 } from 'lucide-react'
 import { timeline } from '@/data/timeline'
 import { personalInfo } from '@/data/personal'
-import { SectionHeading } from '@/components/shared/SectionHeading'
 import { viewportOnce } from '@/lib/animations'
 import { pickLocale } from '@/lib/localize'
 import { cn } from '@/lib/utils'
 import type { TimelineItem, TimelineType } from '@/types'
 import { useLanguage } from '@/i18n/LanguageProvider'
 import { useTheme } from '@/i18n/ThemeProvider'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 type FilterKey = 'all' | 'experience' | 'formation' | 'certificat'
 
 const TYPE_META: Record<
   TimelineType,
-  { icon: typeof Briefcase; labelFr: string; labelEn: string; accent: string }
+  { icon: typeof Briefcase; labelFr: string; labelEn: string; hue: string }
 > = {
-  experience: {
-    icon: Briefcase,
-    labelFr: 'Expérience',
-    labelEn: 'Experience',
-    accent: '#3B82F6',
-  },
-  formation: {
-    icon: GraduationCap,
-    labelFr: 'Formation',
-    labelEn: 'Education',
-    accent: '#22D3EE',
-  },
-  certificat: {
-    icon: Award,
-    labelFr: 'Certificat',
-    labelEn: 'Certificate',
-    accent: '#A78BFA',
-  },
-  milestone: {
-    icon: Trophy,
-    labelFr: 'Temps fort',
-    labelEn: 'Milestone',
-    accent: '#F59E0B',
-  },
-  stage: {
-    icon: Briefcase,
-    labelFr: 'Expérience',
-    labelEn: 'Experience',
-    accent: '#3B82F6',
-  },
-  freelance: {
-    icon: Briefcase,
-    labelFr: 'Expérience',
-    labelEn: 'Experience',
-    accent: '#3B82F6',
-  },
+  experience: { icon: Briefcase, labelFr: 'Expérience', labelEn: 'Experience', hue: '#14b8a6' },
+  formation: { icon: GraduationCap, labelFr: 'Formation', labelEn: 'Education', hue: '#0ea5e9' },
+  certificat: { icon: Award, labelFr: 'Certificat', labelEn: 'Certificate', hue: '#f59e0b' },
+  milestone: { icon: Trophy, labelFr: 'Temps fort', labelEn: 'Milestone', hue: '#eab308' },
+  stage: { icon: Briefcase, labelFr: 'Expérience', labelEn: 'Experience', hue: '#14b8a6' },
+  freelance: { icon: Briefcase, labelFr: 'Expérience', labelEn: 'Experience', hue: '#14b8a6' },
 }
+
+type Point = { x: number; y: number; item: TimelineItem; index: number }
 
 function matchesFilter(item: TimelineItem, filter: FilterKey) {
   if (filter === 'all') return true
@@ -81,20 +57,316 @@ function matchesFilter(item: TimelineItem, filter: FilterKey) {
   return item.type === 'certificat'
 }
 
-function JourneyNode({
-  item,
-  index,
-  progress,
+function shortOrg(name: string, max = 18) {
+  const base = name.split(/\s*[—–|]\s*/)[0]?.trim() || name
+  if (base.length <= max) return base
+  return `${base.slice(0, max - 1)}…`
+}
+
+/** Serpent inset — mobile plus centré pour éviter les coupures */
+function buildSnakePoints(items: TimelineItem[], compact: boolean): Point[] {
+  const left = compact ? 30 : 20
+  const right = compact ? 70 : 80
+  const midL = compact ? 42 : 36
+  const midR = compact ? 58 : 64
+  const gap = compact ? 200 : 200
+  const startY = compact ? 100 : 110
+
+  const pattern = compact
+    ? [left, right, left, right, left, right, left, right]
+    : [left, midR, right, midL, left, right, midL, right, left, midR, right]
+
+  return items.map((item, i) => {
+    const x = pattern[i % pattern.length]
+    const wobble = Math.sin(i * 1.7) * (compact ? 4 : 8)
+    return {
+      x,
+      y: startY + i * gap + wobble,
+      item,
+      index: i,
+    }
+  })
+}
+
+function snakePath(points: Point[]): string {
+  if (!points.length) return ''
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`
+  let d = `M ${points[0].x} ${points[0].y}`
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]
+    const b = points[i]
+    const dy = b.y - a.y
+    d += ` C ${a.x} ${a.y + dy * 0.45}, ${b.x} ${b.y - dy * 0.45}, ${b.x} ${b.y}`
+  }
+  return d
+}
+
+function steppingStones(points: Point[]): { x: number; y: number; key: string }[] {
+  const stones: { x: number; y: number; key: string }[] = []
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]
+    const b = points[i]
+    for (const t of [0.28, 0.5, 0.72]) {
+      stones.push({
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        key: `${i}-${t}`,
+      })
+    }
+  }
+  return stones
+}
+
+function ConquestBackground({ isDark }: { isDark: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      <div
+        className="absolute inset-0"
+        style={{
+          background: isDark
+            ? 'linear-gradient(180deg, #070b12 0%, #0a121c 45%, #070b12 100%)'
+            : 'linear-gradient(180deg, #f7f8fa 0%, #eef1f4 50%, #f5f6f8 100%)',
+        }}
+      />
+
+      <div
+        className="absolute top-[28%] right-[-12%] h-[42%] w-[40%] rounded-full blur-[110px]"
+        style={{ background: isDark ? 'rgba(56,189,248,0.1)' : 'rgba(2,132,199,0.07)' }}
+      />
+      <div
+        className="absolute bottom-[8%] left-[-8%] h-[38%] w-[42%] rounded-full blur-[120px]"
+        style={{ background: isDark ? 'rgba(245,158,11,0.07)' : 'rgba(180,83,9,0.05)' }}
+      />
+
+      {/* Constellation légère — sans rectangles / barres */}
+      <svg className="absolute inset-0 h-full w-full opacity-30" viewBox="0 0 100 100" preserveAspectRatio="none">
+        {[
+          [8, 18],
+          [22, 32],
+          [35, 14],
+          [48, 26],
+          [62, 20],
+          [78, 34],
+          [90, 22],
+          [12, 55],
+          [28, 70],
+          [55, 62],
+          [72, 78],
+          [88, 58],
+          [18, 88],
+          [42, 92],
+          [65, 48],
+        ].map(([cx, cy], i) => (
+          <circle
+            key={i}
+            cx={cx}
+            cy={cy}
+            r={i % 4 === 0 ? 0.28 : 0.16}
+            fill={isDark ? '#94a3b8' : '#64748b'}
+            opacity={0.28 + (i % 5) * 0.06}
+          />
+        ))}
+        <path
+          d="M8 18 L22 32 L35 14 L48 26"
+          fill="none"
+          stroke={isDark ? '#64748b' : '#94a3b8'}
+          strokeWidth="0.07"
+          opacity="0.22"
+        />
+        <path
+          d="M62 20 L78 34 L90 22"
+          fill="none"
+          stroke={isDark ? '#64748b' : '#94a3b8'}
+          strokeWidth="0.07"
+          opacity="0.2"
+        />
+      </svg>
+
+      <div
+        className="absolute inset-0"
+        style={{
+          background: isDark
+            ? 'radial-gradient(ellipse at center, transparent 48%, rgba(2,6,12,0.55) 100%)'
+            : 'radial-gradient(ellipse at center, transparent 52%, rgba(15,23,42,0.04) 100%)',
+        }}
+      />
+    </div>
+  )
+}
+
+function LevelNode({
+  point,
+  active,
+  onSelect,
+  locale,
+  isDark,
+  reduceMotion,
+  compact,
+}: {
+  point: Point
+  active: boolean
+  onSelect: () => void
+  locale: string
+  isDark: boolean
+  reduceMotion: boolean | null
+  compact: boolean
+}) {
+  const { item, index } = point
+  const meta = TYPE_META[item.type]
+  const Icon = meta.icon
+  const level = index + 1
+  const org = shortOrg(item.organization, compact ? 14 : 18)
+  const hue = item.brandColor && item.brandColor !== '#F8FAFC' ? item.brandColor : meta.hue
+
+  return (
+    <motion.button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onSelect()
+      }}
+      data-cursor={org}
+      initial={reduceMotion ? false : { opacity: 0, scale: 0.55, y: 12 }}
+      whileInView={{ opacity: 1, scale: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.35 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 18, delay: Math.min(index * 0.045, 0.4) }}
+      whileHover={reduceMotion ? undefined : { y: -5, scale: 1.05 }}
+      whileTap={reduceMotion ? undefined : { scale: 0.96 }}
+      className={cn(
+        'absolute z-20 flex -translate-x-1/2 -translate-y-[62%] flex-col items-center',
+        compact ? 'w-[4.75rem]' : 'w-[5.25rem] sm:w-[6.75rem]',
+      )}
+      style={{ left: `${point.x}%`, top: point.y }}
+      aria-expanded={active}
+      aria-label={`Level ${level}. ${org}`}
+    >
+      <span
+        aria-hidden
+        className="absolute top-5 left-1/2 h-14 w-14 -translate-x-1/2 rounded-full blur-lg sm:top-6 sm:h-16 sm:w-16"
+        style={{
+          background: `radial-gradient(circle, ${hue}66 0%, transparent 70%)`,
+          opacity: active ? 1 : 0.55,
+        }}
+      />
+
+      {/* Anneau extérieur */}
+      <span
+        aria-hidden
+        className={cn(
+          'absolute top-[1.65rem] left-1/2 h-[4.1rem] w-[4.1rem] -translate-x-1/2 rounded-[1.35rem] border sm:top-[1.85rem] sm:h-[4.85rem] sm:w-[4.85rem] sm:rounded-[1.5rem]',
+          active ? 'opacity-100' : 'opacity-40',
+        )}
+        style={{ borderColor: `${hue}88` }}
+      />
+
+      <span
+        className="relative z-30 mb-[-0.4rem] flex h-7 min-w-7 items-center justify-center rounded-full px-2 font-mono text-[11px] font-bold shadow-md sm:h-8 sm:min-w-8 sm:text-xs"
+        style={{
+          background: `linear-gradient(145deg, ${hue}, ${hue}cc)`,
+          color: '#041016',
+          boxShadow: `0 4px 14px ${hue}55`,
+        }}
+      >
+        {level}
+      </span>
+
+      <span
+        className={cn(
+          'relative flex h-[3.4rem] w-[3.4rem] items-center justify-center overflow-hidden rounded-[1.05rem] border-2 sm:h-16 sm:w-16 sm:rounded-[1.2rem]',
+          isDark ? 'border-white/20' : 'border-white',
+        )}
+        style={{
+          background: item.logoBg ?? '#fff',
+          boxShadow: active
+            ? `0 0 0 3px ${isDark ? '#07141c' : '#f3faf9'}, 0 0 0 5px ${hue}, 0 16px 36px ${hue}40`
+            : isDark
+              ? '0 12px 28px rgba(0,0,0,0.5)'
+              : '0 12px 28px rgba(15,23,42,0.14)',
+        }}
+      >
+        {item.logo ? (
+          <img
+            src={item.logo}
+            alt=""
+            className={cn(
+              'h-full w-full',
+              item.logoFit === 'cover' ? 'object-cover' : 'object-contain p-1.5',
+            )}
+            loading="lazy"
+          />
+        ) : (
+          <Icon className="h-5 w-5 text-slate-700" />
+        )}
+      </span>
+
+      {/* Socle */}
+      <span
+        aria-hidden
+        className="mt-1.5 h-1.5 w-9 rounded-full sm:w-11"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${hue}99, transparent)`,
+        }}
+      />
+
+      <span
+        className={cn(
+          'mt-1.5 line-clamp-1 max-w-[4.75rem] truncate text-center text-[10px] font-semibold sm:max-w-[6.5rem] sm:text-[11px]',
+          active
+            ? isDark
+              ? 'text-teal-100'
+              : 'text-slate-900'
+            : isDark
+              ? 'text-slate-400'
+              : 'text-slate-600',
+        )}
+        title={item.organization}
+      >
+        {org}
+      </span>
+
+      <span
+        className={cn(
+          'mt-0.5 inline-flex items-center gap-1 font-mono text-[9px] tracking-wide uppercase',
+          isDark ? 'text-slate-500' : 'text-slate-400',
+        )}
+      >
+        {item.current ? (
+          <>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            {locale === 'fr' ? 'En cours' : 'Current'}
+          </>
+        ) : (
+          <>
+            <Icon className="h-2.5 w-2.5" />
+            {locale === 'fr' ? meta.labelFr : meta.labelEn}
+          </>
+        )}
+      </span>
+    </motion.button>
+  )
+}
+
+function PointModal({
+  point,
   locale,
   currentLabel,
+  isDark,
+  level,
+  onClose,
+  compact,
 }: {
-  item: TimelineItem
-  index: number
-  progress: MotionValue<number>
+  point: Point
   locale: string
   currentLabel: string
+  isDark: boolean
+  level: number
+  onClose: () => void
+  compact: boolean
 }) {
   const fr = locale === 'fr'
+  const { item } = point
+  const meta = TYPE_META[item.type]
+  const Icon = meta.icon
   const title = pickLocale(item.titleFr, item.titleEn, locale)
   const period = pickLocale(item.periodFr, item.periodEn, locale)
   const location = pickLocale(item.locationFr, item.locationEn, locale)
@@ -103,309 +375,281 @@ function JourneyNode({
     item.tagsFr && item.tagsEn
       ? pickLocale(item.tagsFr, item.tagsEn, locale)
       : item.tagsFr ?? item.tagsEn
-  const meta = TYPE_META[item.type]
-  const Icon = meta.icon
-  const brand = item.brandColor
-  const border = item.brandBorder ?? brand
-  const { isDark } = useTheme()
-  const light = Boolean(item.lightCard) || !isDark
-  const tinted = Boolean(brand) && !light && isDark
-  const accent = brand ?? meta.accent
-  const start = Math.max(0, index * 0.09)
-  const end = Math.min(1, start + 0.22)
-  const nodeScale = useTransform(progress, [start, end], [0.96, 1])
-  const glow = useTransform(progress, [start, (start + end) / 2, end], [0, 1, 0.55])
-  const nodeGlow = useTransform(
-    glow,
-    (v) =>
-      `0 0 ${18 + v * 28}px ${(border ?? accent)}${Math.round(v * 90).toString(16).padStart(2, '0')}`,
-  )
-  const side = index % 2 === 0 ? 'left' : 'right'
+  const hue = item.brandColor && item.brandColor !== '#F8FAFC' ? item.brandColor : meta.hue
 
-  // Fonds opaques — la corde ne doit jamais transparaître à travers la carte
-  const cardStyle = !isDark
-    ? {
-        background: '#ffffff',
-        borderColor: 'rgba(15,23,42,0.06)',
-        borderWidth: 1,
-        boxShadow:
-          '0 2px 4px rgba(15,23,42,0.06), 0 10px 28px rgba(15,23,42,0.1), 0 28px 56px rgba(15,23,42,0.14)',
-      }
-    : light
-      ? {
-          background: '#ffffff',
-          borderColor: 'rgba(15,23,42,0.12)',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.8)',
-        }
-      : tinted
-        ? {
-            background: `linear-gradient(145deg, ${brand}40 0%, #0d1524 42%, #0a1220 100%)`,
-            borderColor: `${border}66`,
-            boxShadow: `0 0 0 1px ${border}40, 0 24px 60px rgba(0,0,0,0.45), 0 0 48px ${brand}18, inset 0 1px 0 ${brand}22`,
-          }
-        : {
-            background: '#0d1524',
-            borderColor: 'rgba(255,255,255,0.12)',
-            boxShadow: '0 16px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)',
-          }
+  const placeBelow = !compact && point.y < 360
+  const preferLeft = point.x > 72
+  const preferRight = point.x < 28
+  const tx = preferLeft ? '-100%' : preferRight ? '0%' : '-50%'
+  const ty = placeBelow ? '0.9rem' : 'calc(-100% - 0.9rem)'
+
+  const card = (
+    <motion.div
+      initial={{ opacity: 0, y: compact ? 24 : placeBelow ? -8 : 8, scale: compact ? 1 : 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: compact ? 16 : placeBelow ? -6 : 6, scale: compact ? 1 : 0.97 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      className={cn(
+        'overflow-hidden rounded-2xl border backdrop-blur-xl',
+        compact && 'flex max-h-[min(78vh,36rem)] flex-col',
+        isDark
+          ? 'border-white/10 bg-[#0e1f2a]/98 shadow-[0_28px_70px_rgba(0,0,0,0.65)]'
+          : 'border-slate-900/8 bg-white/98 shadow-[0_28px_60px_rgba(15,23,42,0.2)]',
+      )}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div
+        className="relative flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4"
+        style={{
+          background: `linear-gradient(135deg, ${hue} 0%, ${hue}bb 55%, ${isDark ? '#0e1f2a' : '#ffffff'} 100%)`,
+        }}
+      >
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-black/30 px-3 py-1.5 font-mono text-xs font-semibold tracking-wide text-white backdrop-blur-sm">
+          <Sparkles className="h-3.5 w-3.5" />
+          LVL {String(level).padStart(2, '0')}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full bg-black/25 p-2 text-white/90 backdrop-blur-sm transition-colors hover:bg-black/40"
+          aria-label={fr ? 'Fermer' : 'Close'}
+          data-cursor={fr ? 'Fermer' : 'Close'}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div
+        className={cn(
+          'relative px-4 py-4 sm:px-6 sm:py-6',
+          compact && 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+        )}
+        {...(compact ? { 'data-lenis-prevent': true } : {})}
+      >
+        <div className={cn('mb-4 flex gap-3 sm:gap-4', compact ? 'flex-col' : 'items-start')}>
+          {item.logo && (
+            <span
+              className={cn(
+                'flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border shadow-md',
+                compact ? 'h-14 w-14' : 'h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]',
+                isDark ? 'border-white/10' : 'border-slate-900/8',
+              )}
+              style={{ background: item.logoBg ?? '#fff' }}
+            >
+              <img
+                src={item.logo}
+                alt=""
+                className={cn(
+                  'h-full w-full',
+                  item.logoFit === 'cover' ? 'object-cover' : 'object-contain p-1.5',
+                )}
+              />
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <span
+              className={cn(
+                'inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[11px] font-medium sm:text-xs',
+                isDark ? 'bg-teal-500/15 text-teal-300' : 'bg-teal-50 text-teal-800',
+              )}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {fr ? meta.labelFr : meta.labelEn}
+                {item.current ? ` · ${currentLabel}` : ''}
+              </span>
+            </span>
+            <h3
+              className={cn(
+                'mt-2 font-display font-semibold leading-snug tracking-tight text-balance',
+                compact ? 'text-lg' : 'text-xl sm:text-2xl',
+                isDark ? 'text-slate-50' : 'text-slate-900',
+              )}
+            >
+              {title}
+            </h3>
+            <p
+              className={cn(
+                'mt-1 font-medium',
+                compact ? 'text-sm' : 'text-base',
+                isDark ? 'text-slate-300' : 'text-slate-700',
+              )}
+            >
+              {item.organization}
+            </p>
+          </div>
+        </div>
+
+        <p
+          className={cn(
+            'flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] sm:text-[13px]',
+            isDark ? 'text-slate-500' : 'text-slate-400',
+          )}
+        >
+          <span>{period}</span>
+          <span className="opacity-40">·</span>
+          <span className="inline-flex items-center gap-1">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+            {location}
+          </span>
+        </p>
+
+        <p
+          className={cn(
+            'mt-3 leading-relaxed text-pretty sm:mt-4',
+            compact ? 'text-sm' : 'text-[15px] sm:text-base',
+            isDark ? 'text-slate-400' : 'text-slate-600',
+          )}
+        >
+          {description}
+        </p>
+
+        {tags && tags.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-1.5 sm:mt-5 sm:gap-2">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className={cn(
+                  'rounded-lg border px-2.5 py-1 font-mono text-[11px] sm:text-xs',
+                  isDark
+                    ? 'border-white/10 bg-white/[0.04] text-slate-400'
+                    : 'border-slate-900/8 bg-slate-50 text-slate-500',
+                )}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  )
+
+  if (compact) {
+    return createPortal(
+      <div className="fixed inset-0 z-[80]">
+        <motion.button
+          type="button"
+          aria-label={fr ? 'Fermer' : 'Close'}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+          onClick={onClose}
+        />
+        <div
+          className="absolute inset-x-3"
+          style={{ bottom: 'max(5.75rem, calc(env(safe-area-inset-bottom, 0px) + 4.75rem))' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+        >
+          {card}
+        </div>
+      </div>,
+      document.body,
+    )
+  }
 
   return (
-    <motion.li
-      style={{ scale: nodeScale }}
-      initial={{ opacity: 0, y: 56, filter: 'blur(10px)' }}
-      whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      viewport={{ once: true, amount: 0.28, margin: '-24px' }}
-      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: Math.min(index * 0.05, 0.25) }}
-      className="relative z-10 grid grid-cols-1 gap-0 lg:grid-cols-[1fr_auto_1fr] lg:gap-0"
+    <div
+      className="absolute z-40 w-[min(26rem,calc(100%-1rem))] sm:w-[30rem]"
+      style={{
+        left: `${point.x}%`,
+        top: point.y,
+        transform: `translate(${tx}, ${ty})`,
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={(e) => e.stopPropagation()}
     >
-      {/* Carte — centrée mobile, alterne desktop */}
-      <div
-        className={cn(
-          'relative z-10 mx-auto w-full max-w-md pt-8 lg:mx-0 lg:max-w-none lg:pt-0 lg:row-start-1',
-          side === 'left' ? 'lg:col-start-1 lg:pr-10 lg:text-right' : 'lg:col-start-3 lg:pl-10',
-          side === 'right' && 'lg:col-start-3',
-        )}
-      >
-        {/* Masque opaque derrière la carte (coupe la corde) */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-8 bottom-0 z-0 rounded-[1.4rem] bg-bg lg:hidden"
-        />
-        <motion.article
-          className={cn(
-            'group relative z-[1] overflow-hidden rounded-[1.4rem] border p-5 text-left sm:p-6',
-            !isDark && 'light-card',
-          )}
-          style={cardStyle}
-          whileHover={
-            !isDark
-              ? {
-                  y: -6,
-                  boxShadow:
-                    '0 4px 8px rgba(15,23,42,0.07), 0 16px 40px rgba(15,23,42,0.12), 0 36px 72px rgba(15,23,42,0.16)',
-                  transition: { type: 'spring', stiffness: 380, damping: 28 },
-                }
-              : { y: -6, transition: { type: 'spring', stiffness: 380, damping: 28 } }
-          }
-        >
-          {tinted && (
-            <>
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full blur-3xl"
-                style={{ background: `${brand}28` }}
-              />
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -bottom-20 -left-10 h-40 w-40 rounded-full blur-3xl"
-                style={{ background: `${brand}14` }}
-              />
-            </>
-          )}
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute -inset-px rounded-[1.4rem] opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-            style={{
-              background: `radial-gradient(500px circle at var(--x,50%) var(--y,0%), ${accent}22, transparent 55%)`,
-            }}
-          />
-
-          <div
-            className={cn(
-              'relative flex flex-wrap items-center gap-3 sm:gap-4',
-              side === 'left' && 'lg:flex-row-reverse lg:justify-start',
-            )}
-          >
-            {item.logo && (
-              <motion.span
-                whileHover={{ scale: 1.06, y: -2 }}
-                transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-                className={cn(
-                  'relative flex h-[4.25rem] w-[4.25rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border sm:h-[5.25rem] sm:w-[5.25rem]',
-                  item.logoFit === 'cover' ? 'p-0' : 'p-2 sm:p-2.5',
-                  light ? 'border-slate-200' : 'border-white/15',
-                )}
-                style={{
-                  background: item.logoBg ?? brand ?? '#ffffff',
-                  boxShadow: tinted
-                    ? `0 12px 32px rgba(0,0,0,0.35), 0 0 0 1px ${border ?? brand}33, 0 0 28px ${brand}22`
-                    : light
-                      ? '0 10px 28px rgba(15,23,42,0.12)'
-                      : '0 12px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.12)',
-                }}
-              >
-                <img
-                  src={item.logo}
-                  alt={`Logo ${item.organization}`}
-                  className={cn(
-                    'h-full w-full',
-                    item.logoFit === 'cover' ? 'scale-[1.02] object-cover' : 'object-contain',
-                  )}
-                  loading="lazy"
-                />
-              </motion.span>
-            )}
-            <div
-              className={cn(
-                'flex min-w-0 flex-1 flex-wrap items-center gap-2',
-                side === 'left' && 'lg:justify-end',
-              )}
-            >
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-wide uppercase"
-                style={{
-                  color: light ? '#0f172a' : accent,
-                  borderColor: light ? 'rgba(15,23,42,0.15)' : `${accent}66`,
-                  background: light ? 'rgba(15,23,42,0.05)' : `${accent}22`,
-                }}
-              >
-                <Icon className="h-3 w-3" />
-                {fr ? meta.labelFr : meta.labelEn}
-              </span>
-              <span
-                className={cn(
-                  'font-mono text-[11px]',
-                  light ? 'text-slate-500' : 'text-slate-500',
-                )}
-              >
-                {period}
-              </span>
-              {item.current && (
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium',
-                    light
-                      ? 'border-emerald-600/25 bg-emerald-50 text-emerald-700'
-                      : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
-                  )}
-                >
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  </span>
-                  {currentLabel}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <h3
-            className={cn(
-              'relative mt-3 font-display text-xl font-bold tracking-tight sm:text-2xl',
-              light ? 'text-slate-900' : 'text-white',
-              side === 'left' && 'lg:text-right',
-            )}
-          >
-            {title}
-          </h3>
-          <p
-            className={cn(
-              'relative mt-1.5 text-sm font-medium',
-              side === 'left' && 'lg:text-right',
-            )}
-            style={{ color: light ? '#0f172a' : accent }}
-          >
-            {item.organization}
-          </p>
-          <p
-            className={cn(
-              'relative mt-1 inline-flex items-center gap-1 text-xs',
-              light ? 'text-slate-500' : 'text-slate-500',
-              side === 'left' && 'lg:w-full lg:justify-end',
-            )}
-          >
-            <MapPin className="h-3 w-3 shrink-0" />
-            {location}
-          </p>
-          <p
-            className={cn(
-              'relative mt-3 text-sm leading-relaxed',
-              light ? 'text-slate-600' : 'text-slate-300',
-              side === 'left' && 'lg:text-right',
-            )}
-          >
-            {description}
-          </p>
-
-          {tags && tags.length > 0 && (
-            <div
-              className={cn(
-                'relative mt-4 flex flex-wrap gap-1.5',
-                side === 'left' && 'lg:justify-end',
-              )}
-            >
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className={cn(
-                    'rounded-md border px-2 py-0.5 text-[10px]',
-                    light
-                      ? 'border-slate-200 bg-slate-50 text-slate-600'
-                      : 'border-white/10 bg-white/[0.03] text-slate-400',
-                  )}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </motion.article>
-      </div>
-
-      {/* Nœud central — fond plein couleur marque / type */}
-      <div className="relative z-20 hidden items-start justify-center lg:flex lg:col-start-2 lg:row-start-1 lg:px-3">
-        <div className="relative mt-7 flex items-center justify-center">
-          <span
-            aria-hidden
-            className="absolute h-[4.5rem] w-[4.5rem] rounded-full bg-bg"
-          />
-          <motion.div
-            style={{
-              boxShadow: nodeGlow,
-              background: border ?? accent,
-            }}
-            className="relative flex h-16 w-16 items-center justify-center rounded-full"
-          >
-            <Icon className="relative h-7 w-7 text-white" strokeWidth={2.25} />
-            <motion.span
-              aria-hidden
-              className="absolute inset-[-8px] rounded-full border"
-              style={{ borderColor: `${border ?? accent}55` }}
-              animate={{ scale: [1, 1.22, 1], opacity: [0.55, 0, 0.55] }}
-              transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut', delay: index * 0.15 }}
-            />
-          </motion.div>
-        </div>
-      </div>
-
-      {/* Colonne vide pour l’alternance */}
-      <div
-        className={cn(
-          'hidden lg:block lg:row-start-1',
-          side === 'left' ? 'lg:col-start-3' : 'lg:col-start-1',
-        )}
+      <span
         aria-hidden
+        className={cn(
+          'absolute left-1/2 h-3.5 w-3.5 -translate-x-1/2 rotate-45',
+          preferLeft && 'left-auto right-10 translate-x-0',
+          preferRight && 'left-10 translate-x-0',
+          placeBelow ? '-top-1.5' : '-bottom-1.5',
+        )}
+        style={{
+          background: isDark ? '#0e1f2a' : '#ffffff',
+          borderRight: placeBelow ? undefined : `1px solid ${hue}44`,
+          borderBottom: placeBelow ? undefined : `1px solid ${hue}44`,
+          borderLeft: placeBelow ? `1px solid ${hue}44` : undefined,
+          borderTop: placeBelow ? `1px solid ${hue}44` : undefined,
+        }}
       />
-    </motion.li>
+      {card}
+    </div>
   )
 }
 
+
 export function Timeline() {
   const { t, locale } = useLanguage()
+  const { isDark } = useTheme()
+  const reduceMotion = useReducedMotion()
+  const compact = !useMediaQuery('(min-width: 640px)')
   const [filter, setFilter] = useState<FilterKey>('all')
-  const sectionRef = useRef<HTMLElement>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
+  const pathRef = useRef<SVGPathElement>(null)
+  const [pathLen, setPathLen] = useState(1)
 
   const visible = useMemo(
     () => [...timeline].filter((item) => matchesFilter(item, filter)).reverse(),
     [filter],
   )
 
+  const points = useMemo(() => buildSnakePoints(visible, compact), [visible, compact])
+  const pathD = useMemo(() => snakePath(points), [points])
+  const stones = useMemo(() => steppingStones(points), [points])
+  // Extra bas mobile : labels + zone hors WhatsApp FAB
+  const boardHeight = points.length
+    ? points[points.length - 1].y + (compact ? 200 : 160)
+    : 240
+
+  const activePoint = points.find((p) => p.item.id === activeId) ?? null
+
+  useEffect(() => {
+    setActiveId(null)
+  }, [filter])
+
+  useEffect(() => {
+    const el = pathRef.current
+    if (!el) return
+    setPathLen(el.getTotalLength() || 1)
+  }, [pathD])
+
+  useEffect(() => {
+    if (!activeId) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [activeId])
+
+  useEffect(() => {
+    if (!compact || !activeId) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [compact, activeId])
+
   const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ['start 70%', 'end 85%'],
+    target: boardRef,
+    offset: ['start 80%', 'end 50%'],
   })
-  const pathProgress = useSpring(scrollYProgress, { stiffness: 90, damping: 24, mass: 0.35 })
-  const pathHeight = useTransform(pathProgress, [0, 1], ['0%', '100%'])
+  const draw = useSpring(scrollYProgress, {
+    stiffness: reduceMotion ? 200 : 50,
+    damping: 22,
+    mass: 0.5,
+  })
+  const dashOffset = useTransform(draw, [0, 1], [pathLen, 0])
 
   const filters: { key: FilterKey; label: string }[] = [
     { key: 'all', label: t.journey.filters.all },
@@ -415,54 +659,77 @@ export function Timeline() {
   ]
 
   const linkedin = personalInfo.socials.find((s) => s.id === 'linkedin')?.href
+  const trace = isDark ? '#2dd4bf' : '#0f766e'
+  const traceSoft = isDark ? 'rgba(45,212,191,0.22)' : 'rgba(15,118,110,0.18)'
 
   return (
     <section
       id="journey"
-      ref={sectionRef}
-      className="relative overflow-hidden py-24 sm:py-32"
+      className="relative isolate overflow-x-clip py-24 pb-32 sm:py-32 sm:pb-32"
     >
-      {/* Atmosphère */}
-      <div className="theme-ambient pointer-events-none absolute inset-0" aria-hidden>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.12),transparent_55%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(167,139,250,0.1),transparent_50%)]" />
-        <div
-          className="absolute inset-0 opacity-[0.35]"
-          style={{
-            backgroundImage:
-              'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.05) 0.5px, transparent 0.5px), radial-gradient(circle at 80% 60%, rgba(255,255,255,0.04) 0.5px, transparent 0.5px)',
-            backgroundSize: '48px 48px, 72px 72px',
-          }}
-        />
-        <motion.div
-          className="absolute top-1/4 left-[12%] h-64 w-64 rounded-full bg-accent/15 blur-[100px]"
-          animate={{ y: [0, 30, 0], opacity: [0.35, 0.55, 0.35] }}
-          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
-        />
-        <motion.div
-          className="absolute right-[10%] bottom-1/4 h-72 w-72 rounded-full bg-accent-violet/15 blur-[110px]"
-          animate={{ y: [0, -24, 0], opacity: [0.3, 0.5, 0.3] }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-        />
-      </div>
+      <ConquestBackground isDark={isDark} />
 
-      <div className="relative mx-auto max-w-6xl px-5 sm:px-8">
-        <SectionHeading
-          eyebrow={t.journey.eyebrow}
-          title={t.journey.title}
-          description={t.journey.description}
-        />
-
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
+      <div className="relative w-full px-4 sm:px-6 lg:px-10">
+        <motion.header
+          initial={reduceMotion ? false : { opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={viewportOnce}
-          className="mb-10 flex flex-col items-center gap-4 sm:mb-14"
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-auto mb-10 max-w-3xl text-center sm:mb-12"
+        >
+          <div className="mb-5 flex flex-wrap items-center justify-center gap-3">
+            <span
+              className={cn(
+                'inline-flex items-center gap-2 rounded-md border px-2.5 py-1 font-mono text-[11px] tracking-[0.18em] uppercase',
+                isDark
+                  ? 'border-teal-400/30 bg-teal-400/10 text-teal-300'
+                  : 'border-teal-800/15 bg-teal-50 text-teal-900',
+              )}
+            >
+              <Cpu className="h-3.5 w-3.5" />
+              {t.journey.eyebrow}
+            </span>
+            <span
+              className={cn(
+                'font-mono text-[10px] tracking-[0.16em] uppercase',
+                isDark ? 'text-slate-500' : 'text-slate-400',
+              )}
+            >
+              conquest://career
+            </span>
+          </div>
+
+          <h2
+            className={cn(
+              'font-display text-3xl font-semibold tracking-tight text-balance sm:text-4xl md:text-5xl',
+              isDark ? 'text-slate-50' : 'text-slate-900',
+            )}
+          >
+            {t.journey.title}
+          </h2>
+          <p
+            className={cn(
+              'mx-auto mt-4 max-w-xl text-base leading-relaxed text-pretty sm:text-lg',
+              isDark ? 'text-slate-400' : 'text-slate-600',
+            )}
+          >
+            {t.journey.description}
+          </p>
+        </motion.header>
+
+        <motion.div
+          initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={viewportOnce}
+          className="mb-6 flex flex-col items-center gap-4 sm:mb-8"
         >
           <div
-            className="flex w-full max-w-xl items-stretch gap-0.5 overflow-x-auto rounded-2xl border border-white/[0.1] bg-elevated p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:max-w-none sm:rounded-full sm:p-1.5 [&::-webkit-scrollbar]:hidden"
             role="tablist"
             aria-label={t.journey.eyebrow}
+            className={cn(
+              'inline-flex flex-wrap justify-center gap-1 rounded-xl border p-1 backdrop-blur-md',
+              isDark ? 'border-white/10 bg-black/25' : 'border-slate-900/8 bg-white/60',
+            )}
           >
             {filters.map((f) => {
               const active = filter === f.key
@@ -475,166 +742,172 @@ export function Timeline() {
                   onClick={() => setFilter(f.key)}
                   data-cursor={f.label}
                   className={cn(
-                    'relative min-w-0 flex-1 whitespace-nowrap rounded-xl px-2.5 py-2.5 text-center text-[11px] font-medium tracking-tight transition-colors sm:flex-none sm:rounded-full sm:px-4 sm:py-2 sm:text-sm',
-                    active ? 'text-text' : 'text-muted hover:text-text/85',
+                    'relative rounded-lg px-3 py-2 font-mono text-[12px] tracking-tight transition-colors',
+                    active
+                      ? isDark
+                        ? 'bg-teal-400/15 text-teal-200'
+                        : 'bg-teal-900 text-white'
+                      : isDark
+                        ? 'text-slate-500 hover:text-slate-300'
+                        : 'text-slate-500 hover:text-slate-800',
                   )}
                 >
-                  {active && (
-                    <motion.span
-                      layoutId="journey-filter-pill"
-                      className="absolute inset-0 rounded-xl border border-accent-cyan/40 bg-accent-cyan/15 shadow-[0_0_20px_rgba(34,211,238,0.18)] sm:rounded-full"
-                      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-                    />
-                  )}
-                  <span className="relative z-10">{f.label}</span>
-                  {active && (
-                    <span
-                      aria-hidden
-                      className="absolute inset-x-3 bottom-1 mx-auto h-[2px] rounded-full bg-gradient-to-r from-accent-cyan via-accent to-accent-violet sm:hidden"
-                    />
-                  )}
+                  {f.label}
                 </button>
               )
             })}
           </div>
 
-          <motion.p
-            className="inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.18em] text-slate-500 uppercase"
-            animate={{ opacity: [0.45, 1, 0.45], y: [0, 3, 0] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+          <p
+            className={cn(
+              'inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase',
+              isDark ? 'text-slate-500' : 'text-slate-400',
+            )}
           >
-            <ArrowDown className="h-3.5 w-3.5" />
+            <Code2 className="h-3.5 w-3.5" />
             {t.journey.nextHint}
-          </motion.p>
+          </p>
         </motion.div>
 
-        <div className="relative mx-auto max-w-5xl">
-          {/* Corde / rail central */}
-          <div
-            className="pointer-events-none absolute top-0 bottom-0 left-1/2 z-0 w-[3px] -translate-x-1/2 rounded-full bg-white/[0.08]"
-            aria-hidden
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`${filter}-${compact ? 'm' : 'd'}`}
+            ref={boardRef}
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.28 }}
+            className="relative mx-auto w-full max-w-[1400px]"
+            style={{ height: boardHeight }}
+            onClick={() => setActiveId(null)}
           >
-            {/* Texture corde (tirets) */}
-            <div
-              className="absolute inset-0 opacity-40 lg:hidden"
-              style={{
-                backgroundImage:
-                  'repeating-linear-gradient(180deg, transparent 0 10px, rgba(255,255,255,0.14) 10px 12px)',
-              }}
-            />
-            <motion.div
-              className="absolute top-0 left-0 w-full origin-top rounded-full"
-              style={{
-                height: pathHeight,
-                background:
-                  'linear-gradient(180deg, #3B82F6 0%, #A78BFA 45%, #22D3EE 100%)',
-                boxShadow:
-                  '0 0 18px rgba(59,130,246,0.55), 0 0 36px rgba(167,139,250,0.25)',
-              }}
-            />
-            {/* Perle lumineuse qui descend avec le scroll */}
-            <motion.span
-              className="absolute left-1/2 z-[1] hidden h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-white shadow-[0_0_16px_rgba(34,211,238,0.95)] lg:block"
-              style={{ top: pathHeight }}
-            />
-            <motion.span
-              className="absolute left-1/2 z-[1] h-3 w-3 -translate-x-1/2 rounded-full bg-accent-cyan shadow-[0_0_20px_rgba(34,211,238,0.9)] lg:hidden"
-              style={{ top: pathHeight }}
-            />
-          </div>
-
-          <AnimatePresence mode="wait">
-            <motion.ol
-              key={filter}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.35 }}
-              className="relative z-10 space-y-12 sm:space-y-14 lg:space-y-16"
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+              viewBox={`0 0 100 ${boardHeight}`}
+              preserveAspectRatio="none"
+              aria-hidden
             >
-              {visible.map((item, i) => {
-                const nodeColor =
-                  item.brandBorder ?? item.brandColor ?? TYPE_META[item.type].accent
-                const MobileIcon = TYPE_META[item.type].icon
-                return (
-                  <div key={item.id} className="relative z-10 isolate">
-                    {/* Nœud mobile — sur la corde centrale */}
-                    <motion.span
-                      className="absolute left-1/2 top-0 z-20 flex -translate-x-1/2 items-center justify-center lg:hidden"
-                      initial={{ scale: 0.5, opacity: 0 }}
-                      whileInView={{ scale: 1, opacity: 1 }}
-                      viewport={{ once: true, amount: 0.8 }}
-                      transition={{ type: 'spring', stiffness: 320, damping: 18 }}
-                    >
-                      <span
-                        aria-hidden
-                        className="absolute h-12 w-12 rounded-full bg-bg"
-                      />
-                      <span
-                        className="absolute h-11 w-11 rounded-full border border-white/10"
-                        aria-hidden
-                      />
-                      <motion.span
-                        aria-hidden
-                        className="absolute h-14 w-14 rounded-full border"
-                        style={{ borderColor: `${nodeColor}55` }}
-                        animate={{ scale: [1, 1.28, 1], opacity: [0.5, 0, 0.5] }}
-                        transition={{
-                          duration: 2.6,
-                          repeat: Infinity,
-                          ease: 'easeInOut',
-                          delay: i * 0.12,
-                        }}
-                      />
-                      <span
-                        className="relative flex h-10 w-10 items-center justify-center rounded-full"
-                        style={{
-                          background: `linear-gradient(145deg, ${nodeColor}, ${nodeColor}cc)`,
-                          boxShadow: `0 0 22px ${nodeColor}66, inset 0 1px 0 rgba(255,255,255,0.25)`,
-                        }}
-                      >
-                        <MobileIcon className="h-4 w-4 text-white" strokeWidth={2.4} />
-                      </span>
-                    </motion.span>
+              <path
+                d={pathD}
+                fill="none"
+                stroke={traceSoft}
+                strokeWidth={compact ? 7 : 5.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+              <path
+                d={pathD}
+                fill="none"
+                stroke={trace}
+                strokeWidth={compact ? 1.6 : 1.25}
+                strokeLinecap="round"
+                strokeDasharray="2 2.6"
+                opacity={0.35}
+                vectorEffect="non-scaling-stroke"
+              />
+              <motion.path
+                ref={pathRef}
+                d={pathD}
+                fill="none"
+                stroke={trace}
+                strokeWidth={compact ? 2.6 : 2.1}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={pathLen}
+                style={{ strokeDashoffset: dashOffset }}
+                opacity={0.95}
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
 
-                    {/* Segment corde décoratif mobile (sous le nœud → carte) */}
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute left-1/2 top-10 z-[1] h-6 w-px -translate-x-1/2 bg-gradient-to-b from-white/25 to-transparent lg:hidden"
-                    />
+            {stones.map((s, i) => (
+              <span
+                key={s.key}
+                aria-hidden
+                className="absolute z-10 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full sm:h-2 sm:w-2"
+                style={{
+                  left: `${s.x}%`,
+                  top: s.y,
+                  background: trace,
+                  opacity: 0.4 + (i % 3) * 0.15,
+                  boxShadow: isDark ? `0 0 10px ${trace}` : undefined,
+                }}
+              />
+            ))}
 
-                    <div className="lg:pl-0">
-                      <JourneyNode
-                        item={item}
-                        index={i}
-                        progress={pathProgress}
-                        locale={locale}
-                        currentLabel={t.journey.current}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </motion.ol>
-          </AnimatePresence>
-        </div>
+            {points.map((point) => {
+              const hue =
+                point.item.brandColor && point.item.brandColor !== '#F8FAFC'
+                  ? point.item.brandColor
+                  : TYPE_META[point.item.type].hue
+              return (
+                <span
+                  key={`zone-${point.item.id}`}
+                  aria-hidden
+                  className="pointer-events-none absolute z-[5] h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full blur-2xl sm:h-36 sm:w-36"
+                  style={{
+                    left: `${point.x}%`,
+                    top: point.y,
+                    background: `radial-gradient(circle, ${hue}40 0%, transparent 70%)`,
+                  }}
+                />
+              )
+            })}
+
+            {points.map((point) => (
+              <LevelNode
+                key={point.item.id}
+                point={point}
+                active={activeId === point.item.id}
+                onSelect={() =>
+                  setActiveId((id) => (id === point.item.id ? null : point.item.id))
+                }
+                locale={locale}
+                isDark={isDark}
+                reduceMotion={reduceMotion}
+                compact={compact}
+              />
+            ))}
+
+            <AnimatePresence>
+              {activePoint && (
+                <PointModal
+                  key={activePoint.item.id}
+                  point={activePoint}
+                  locale={locale}
+                  currentLabel={t.journey.current}
+                  isDark={isDark}
+                  level={activePoint.index + 1}
+                  onClose={() => setActiveId(null)}
+                  compact={compact}
+                />
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </AnimatePresence>
 
         {linkedin && (
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 12 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={viewportOnce}
-            className="mt-14 flex justify-center"
+            className="mt-12 flex justify-center sm:mt-14"
           >
             <a
               href={linkedin}
               target="_blank"
               rel="noreferrer"
               data-cursor={t.journey.linkedin}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-5 py-2.5 text-sm font-medium text-slate-200 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-white"
+              className={cn(
+                'group inline-flex items-center gap-2 rounded-full border px-5 py-2.5 font-mono text-sm transition-colors',
+                isDark
+                  ? 'border-teal-400/30 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20'
+                  : 'border-teal-900/15 bg-teal-950 text-white hover:bg-teal-900',
+              )}
             >
               {t.journey.linkedin}
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </a>
           </motion.div>
         )}
