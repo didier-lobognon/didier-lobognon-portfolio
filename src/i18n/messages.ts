@@ -81,9 +81,9 @@ export const messages = {
     },
     journey: {
       eyebrow: 'Parcours',
-      title: 'Une trajectoire en mouvement',
+      title: 'Ma carte de niveaux',
       description:
-        'Du présent au passé : expériences, formations et certifications — le fil le plus récent en premier.',
+        'Un chemin en serpentin — chaque nœud est une étape tech : expériences, formations, certifications. Clique pour ouvrir le niveau.',
       filters: {
         all: 'Tout',
         experience: 'Expériences',
@@ -91,7 +91,7 @@ export const messages = {
         certificat: 'Certificats',
       },
       current: 'En cours',
-      nextHint: 'Faites défiler pour remonter dans le temps',
+      nextHint: 'Sélectionne un niveau',
       linkedin: 'Voir sur LinkedIn',
     },
     services: {
@@ -245,9 +245,9 @@ export const messages = {
     },
     journey: {
       eyebrow: 'Journey',
-      title: 'A path still unfolding',
+      title: 'My level map',
       description:
-        'From present to past: experience, education, and certifications — newest first.',
+        'A winding path — each node is a tech milestone: experience, education, certifications. Click to open a level.',
       filters: {
         all: 'All',
         experience: 'Experience',
@@ -255,7 +255,7 @@ export const messages = {
         certificat: 'Certificates',
       },
       current: 'Current',
-      nextHint: 'Scroll to go further back',
+      nextHint: 'Select a level',
       linkedin: 'View on LinkedIn',
     },
     services: {
